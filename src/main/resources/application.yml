@@ -1,0 +1,11 @@
+server:
+  servlet:
+    context-path: /live
+  port: 9090
+
+file:
+  rootpath: /nagisa/livestore/
+
+bilibili:
+  # 需要预先浏览器登录访问一次bilibili，获取请求头中cookie字段
+  cookie: xxx

@@ -1,0 +1,32 @@
+<html>
+
+<body>
+<div id="res">21212</div>
+
+</body>
+<script>
+
+
+    const work = new Worker("./media.js");
+    work.postMessage(getParam('path')+'/'+getParam('file'));
+
+    work.onmessage = function (event) {
+        var res = event.data;
+        console.log(res);
+        document.getElementById("res").textContent = res;
+        work.terminate();
+    }
+
+    function getParam(name) {
+        var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)", "i");
+        var r = window.location.search.substr(1).match(reg);//获取url中"?"符后的字符串并正则匹配
+        var context = "";
+        if (r != null)
+            context = r[2];
+        reg = null;
+        r = null;
+        return context == null || context == "" || context == "undefined" ? "" : context;
+    }
+</script>
+
+</html>
