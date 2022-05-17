@@ -1,38 +1,30 @@
 package com.nagisazz.livestore.service;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.nagisazz.livestore.pojo.FileInfo;
 import com.nagisazz.livestore.pojo.VideoInfo;
 import com.nagisazz.livestore.task.FileUploadTask;
+import com.nagisazz.livestore.util.Base64Util;
 import com.nagisazz.livestore.util.ChromeUtil;
-import com.nagisazz.livestore.util.CompressUtil;
 import com.nagisazz.livestore.util.RequestsBuilder;
+import com.nagisazz.livestore.util.VideoUtil;
 
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
-import java.io.File;
-import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 
 
 @Setter
@@ -43,26 +35,25 @@ public class BilibiliUploadService {
 
     @Value("${bilibili.cookie}")
     private String cookie;
+
     @Autowired
     private FileUploadTask fileUploadTask;
+
     private String fileAuth;
+
     private String metaAuth;
 
-    /**
-     * B站发布视频入口方法
-     * @param videoInfo {@link VideoInfo}
-     * @param needCompress 是否需要压缩
-     */
     public synchronized void upload(VideoInfo videoInfo, boolean needCompress) {
         String filePath = videoInfo.getPath();
         String fileName = videoInfo.getFileName();
-        if (needCompress && !CompressUtil.compressionVideo(filePath + "/" + fileName, fileName = "c" + fileName)) {
+        //压缩视频
+        if (needCompress && !VideoUtil.compressionVideo(filePath + "/" + fileName, fileName = "c" + fileName)) {
             return;
         }
+        //获取封面，默认第10s
+        videoInfo.setCover(getCoverPath(filePath, fileName));
+
         File file = new File(filePath + "/" + fileName);
-
-//        https://archive.biliimg.com/bfs/archive/824ea31244a18a8407b8fdb4fc6f6d0ad610107e.jpg
-
         JSONObject addParam = JSONObject.parseObject(
                 "{\"copyright\":1," +
                         "\"videos\":" +
@@ -72,7 +63,7 @@ public class BilibiliUploadService {
                         "\"cid\":\"$cid$\"}]," +
                         "\"cover\":\"" + videoInfo.getCover() + "\"," +
                         "\"interactive\":0," +
-                        "\"tid\":21," +
+                        "\"tid\":164," +
                         "\"title\":\"" + videoInfo.getTitle() + "\"," +
                         "\"tag\":\"" + videoInfo.getTag() + "\"," +
                         "\"mission_id\":0," +
@@ -86,6 +77,15 @@ public class BilibiliUploadService {
                         "\"subtitle\":{\"open\":1,\"lan\":\"\"}," +
                         "\"csrf\":\"$csrf$\"}");
         start(filePath, fileName, file, addParam);
+    }
+
+    private String getCoverPath(String filePath, String fileName) {
+        String coverPath = fileName.substring(0, fileName.lastIndexOf(".")) + ".jpg";
+        if (!VideoUtil.generateScreenImage(filePath + "/" + fileName, coverPath, 10)) {
+            return "";
+        }
+        final JSONObject coverPathJson = JSON.parseObject(formPost("https://member.bilibili.com/x/vu/web/cover/up?t=" + System.currentTimeMillis(), filePath + "/" + coverPath, csrf()));
+        return coverPathJson.getJSONObject("data").getString("url");
     }
 
     private void start(String path, String name, File file, JSONObject addParam) {
@@ -122,18 +122,18 @@ public class BilibiliUploadService {
         }
     }
 
-    private String getFileUploadId(String url, JSONObject fileOrigin, JSONObject metaOrigin) {
+    public String getFileUploadId(String url, JSONObject fileOrigin, JSONObject metaOrigin) {
         return JSONObject.parseObject(post(url + "?uploads&output=json&profile=ugcfx%2Fbup&filesize=" + fileOrigin.get("fileSize") +
                 "&partsize=" + fileOrigin.get("chunk_size") + "&meta_upos_uri=" +
                 metaOrigin.getString("upos_uri").replace(":", "%3A").replace("/", "%2F") +
                 "&biz_id=" + fileOrigin.get("biz_id"), null, fileAuth)).getString("upload_id");
     }
 
-    private String getMetaUploadId(String url) {
+    public String getMetaUploadId(String url) {
         return JSONObject.parseObject(post(url + "?uploads&output=json&", null, metaAuth)).getString("upload_id");
     }
 
-    private void metaUpload(JSONObject origin) {
+    public void metaUpload(JSONObject origin) {
         JSONObject param = handleParam(ChromeUtil.getMeta(origin.getString("path")
                         .substring(origin.getString("path").lastIndexOf("/") + 1),
                 origin.getString("name"), origin.getInteger("fileSize")));
@@ -145,7 +145,7 @@ public class BilibiliUploadService {
                 origin.getString("uploadId") + "&biz_id=", JSONObject.parseObject(endStr), metaAuth);
     }
 
-    private void partFileUpload(File file, JSONObject origin, JSONObject addParam) {
+    public void partFileUpload(File file, JSONObject origin, JSONObject addParam) {
         long partSize = origin.getLong("chunk_size");
         long fileSize = file.length();
         int partCount = (int) (fileSize / partSize);
@@ -192,7 +192,7 @@ public class BilibiliUploadService {
         }
     }
 
-    private void afterUpload(JSONObject param, JSONObject origin, JSONObject addParam) {
+    public void afterUpload(JSONObject param, JSONObject origin, JSONObject addParam) {
         log.info("开始准备上传");
         String src = "?output=json&name=" + origin.getString("fileName") + "&profile=ugcfx%2Fbup&uploadId=" +
                 origin.getString("uploadId") + "&biz_id=" + origin.getString("biz_id");
@@ -252,7 +252,7 @@ public class BilibiliUploadService {
         return param;
     }
 
-    private String get(String url) {
+    public String get(String url) {
         Map<String, String> headers = new HashMap();
         headers.put("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
         headers.put("Accept-Language", "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2");
@@ -261,7 +261,7 @@ public class BilibiliUploadService {
         return RequestsBuilder.sendGet(url, headers);
     }
 
-    private String post(String url, JSONObject param, String auth) {
+    public String post(String url, JSONObject param, String auth) {
         Map<String, String> headers = new HashMap();
         headers.put("Accept", "*/*");
         headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36");
@@ -278,7 +278,7 @@ public class BilibiliUploadService {
         return response;
     }
 
-    private String put(String url, JSONObject param, String auth) {
+    public String put(String url, JSONObject param, String auth) {
         Map<String, String> headers = new HashMap();
         headers.put("Accept", "*/*");
         headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36");
@@ -293,5 +293,20 @@ public class BilibiliUploadService {
             response = RequestsBuilder.sendPut(url, param.toJSONString(), headers);
         }
         return response;
+    }
+
+    public String formPost(String url, String imgPath, String csrf) {
+        Map<String, String> headers = new HashMap();
+        headers.put("Accept", "*/*");
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.66 Safari/537.36");
+        headers.put("Cookie", cookie);
+        headers.put("Origin", "https://member.bilibili.com");
+        headers.put("Referer", "https://member.bilibili.com/video/upload.html");
+
+        Map<String, String> strMap = new HashMap<>();
+        Map<String, File> fileMap = new HashMap<>();
+        strMap.put("cover", "data:image/jpeg;base64," + Base64Util.transformImg(imgPath));
+        strMap.put("csrf", csrf);
+        return RequestsBuilder.sendFormPost(url, strMap, fileMap, headers);
     }
 }

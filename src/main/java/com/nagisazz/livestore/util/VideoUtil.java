@@ -4,7 +4,9 @@ import java.io.File;
 
 import lombok.extern.slf4j.Slf4j;
 import ws.schild.jave.Encoder;
+import ws.schild.jave.EncoderException;
 import ws.schild.jave.MultimediaObject;
+import ws.schild.jave.ScreenExtractor;
 import ws.schild.jave.encode.AudioAttributes;
 import ws.schild.jave.encode.EncodingAttributes;
 import ws.schild.jave.encode.VideoAttributes;
@@ -12,17 +14,25 @@ import ws.schild.jave.info.AudioInfo;
 import ws.schild.jave.info.VideoSize;
 
 @Slf4j
-public class CompressUtil {
+public class VideoUtil {
 
-    public static synchronized boolean compressionVideo(String source, String picName) {
-        File oriFile = new File(source);
-        String newPath = source.substring(0, source.lastIndexOf("/")).concat("/").concat(picName);
+    /**
+     * 压缩视频
+     *
+     * @param sourcePath 原视频路径
+     * @param targetName 新视频文件名
+     * @return
+     */
+    public static synchronized boolean compressionVideo(String sourcePath, String targetName) {
+        File oriFile = new File(sourcePath);
+        // 同目录下生成
+        String newPath = sourcePath.substring(0, sourcePath.lastIndexOf("/")).concat("/").concat(targetName);
         File target = new File(newPath);
         try {
             MultimediaObject object = new MultimediaObject(oriFile);
             AudioInfo audioInfo = object.getInfo().getAudio();
-            double mb = Math.ceil(source.length() / 1048576);
-            log.info("开始压缩，原视频地址：{}，文件大小：{}MB", source, mb);
+            double mb = Math.ceil(sourcePath.length() / 1048576);
+            log.info("开始压缩，原视频地址：{}，文件大小：{}MB", sourcePath, mb);
 
             long time = System.currentTimeMillis();
             // 视频属性设置
@@ -94,6 +104,27 @@ public class CompressUtil {
             if (target.length() > 0) {
                 oriFile.delete();
             }
+        }
+        return true;
+    }
+
+    public static boolean generateScreenImage(String sourcePath, String targetName, Integer second) {
+        // 同目录下生成
+        String targetUrl = sourcePath.substring(0, sourcePath.lastIndexOf("/")).concat("/").concat(targetName);
+
+        MultimediaObject multimediaObject = new MultimediaObject(new File(sourcePath));
+        ScreenExtractor screenExtractor = new ScreenExtractor();
+        int width = -1;
+        int height = -1;
+        long millis = second * 1000;
+        File outputFile = new File(targetUrl);
+        int quality = 1;
+        log.info("开始生成截图，原视频路径：{}，生成截图路径：{}", sourcePath, targetUrl);
+        try {
+            screenExtractor.renderOneImage(multimediaObject, width, height, millis, outputFile, quality);
+        } catch (EncoderException e) {
+            log.error("生成截图失败，原视频路径：{}，生成截图路径：{}", sourcePath, targetUrl, e);
+            return false;
         }
         return true;
     }

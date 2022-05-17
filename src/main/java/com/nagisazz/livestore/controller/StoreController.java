@@ -35,8 +35,8 @@ public class StoreController {
     @RestKeeper
     public String startUpload(@RequestParam("path") String path, @RequestParam("fileName") String fileName,
                               @RequestParam("title") String title, @RequestParam("desc") String desc,
-                              @RequestParam("tag") String tag, @RequestParam("cover") String cover) {
-        VideoInfo videoInfo = VideoInfo.builder().path(rootpath + path).fileName(fileName).title(title).desc(desc).tag(tag).cover(cover).build();
+                              @RequestParam("tag") String tag) {
+        VideoInfo videoInfo = VideoInfo.builder().path(rootpath + path).fileName(fileName).title(title).desc(desc).tag(tag).build();
         streamService.upload(videoInfo);
         return "success";
     }
